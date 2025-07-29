@@ -1,0 +1,638 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+body {
+  font-family: sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background-color: #ffffff;
+  overscroll-behavior-y: none;
+  position: relative;
+}
+
+#app {
+  width: 100vw;
+  max-width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #fff;
+  overflow: hidden;
+  margin: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  box-sizing: border-box;
+  position: relative;
+}
+
+.header {
+  text-align: center;
+  padding: 8px 12px; /* Уменьшено расстояние */
+  font-size: 15px;
+  font-weight: 600;
+  background-color: #fff;
+  border-bottom: none;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  margin-top: 0px; /* Понижено расположение */
+}
+
+.back-button {
+  width: 30px; /* Увеличено с 24px */
+  height: 30px; /* Увеличено с 24px */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  position: absolute;
+  left: 12px;
+  top: 5px;
+}
+
+.back-button svg {
+  width: 30px; /* Увеличено с 24px */
+  height: 30px; /* Увеличено с 24px */
+}
+
+.back-button path {
+  stroke: #000;
+}
+
+.header .divider {
+  width: calc(100% - 20px); /* Укорочено с правой стороны */
+  height: 30.5px;
+  top: 22px;
+  background-color: #f2f2f2;
+  border-radius: 12.625px;
+  margin: 0 auto 0; /* Понижено расположение */
+  position: relative;
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 6px;
+  font-size: 15px;
+  color: #000000;
+}
+
+.slider {
+  width: 48%;
+  height: calc(100% - 4px);
+  background-color: #fff;
+  border-radius: 10.625px;
+  position: absolute;
+  left: 2.2px;
+  top: 2.2px;
+  right: 1.8px; /* Исправлено значение */
+  transition: transform 0.3s ease-in-out;
+  pointer-events: none;
+  cursor: grab;
+  touch-action: none;
+  transform: translateX(105%);
+}
+
+.slider:active {
+  cursor: grabbing;
+}
+
+#content {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  width: 200%;
+  transition: transform 0.3s ease-in-out;
+}
+
+#footer {
+  padding: 20px;
+  text-align: center;
+  background-color: #fff;
+  color: #555;
+  position: relative;
+}
+
+.page {
+  width: 50%;
+  height: 100%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.page {
+  display: flex !important;
+}
+
+.tab-label {
+  z-index: 1;
+  font-weight: 400;
+  cursor: pointer;
+  padding: 8px 12px;
+  transition: color 0.3s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  position: relative;
+  text-align: center;
+  flex: 1;
+  color: #000000;
+}
+
+.tab-label::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  right: -10px;
+  bottom: -10px;
+  z-index: -1;
+}
+
+.tab-label:hover {
+  color: #000000;
+}
+
+.tab-label:active {
+  color: #000000;
+}
+
+.tab-label.active {
+  color: #000000;
+}
+
+.tab-label.active + .tab-label + .slider {
+  transform: translateX(0);
+}
+
+.status-bar {
+  height: 44px;
+  width: 100%;
+  background: #fff;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #000;
+  padding-top: env(safe-area-inset-top);
+  display: none;
+}
+
+.qr-modal {
+  position: fixed;
+  bottom: -100%;
+  left: 0;
+  width: 100%;
+  height: 49vh; 
+  top: auto; 
+  background: white;
+  border-top-left-radius: 25px;
+  border-top-right-radius: 25px;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.1);
+  z-index: 1000;
+  padding: 10px 20px;
+  box-sizing: border-box;
+  transition: all 0.3s ease-out;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  touch-action: none; 
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.qr-modal.show {
+  bottom: 15vh; /* Добавлено свойство для поднятия модального окна */
+}
+
+.qr-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  z-index: 999;
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+  display: none;
+  pointer-events: auto;
+}
+
+.qr-modal-overlay.show {
+  display: block;
+  opacity: 1;
+  transition: opacity 0.3s ease-out;
+}
+
+.text-inputs-container {
+  width: 100%;
+  height: calc(100vh - 200px); 
+  padding: 15px;
+  overflow-y: auto; 
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch; 
+}
+
+.photo-upload-container {
+  width: 100%;
+  height: calc(100vh - 280px); 
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  position: relative;
+  margin-top: 25px;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+@media screen and (max-width: 768px) {
+  .header {
+    padding: 12px 16px;
+    font-size: 15px;  
+  }
+  
+  .header > span {  
+    font-size: 15px;
+  }
+  
+  .text-inputs-container {
+    height: calc(100vh - 280px); 
+    padding: 15px;
+  }
+  
+  .photo-upload-container {
+    height: calc(100vh - 280px); 
+    margin-top: 25px;
+  }
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.bottom-buttons, .bottom-button-page2 {
+  width: 100%;
+  padding: 10px 10px 16px; /* Увеличен нижний отступ на 2px */
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #fff;
+  position: fixed;
+  bottom: 0px;
+  left: 0;
+  box-sizing: border-box;
+  border-top: 0.5px solid #E5E5E5;
+  z-index: 10;
+}
+
+.bottom-button-page2 {
+  border-top: none;
+}
+
+@media screen and (max-width: 768px) {
+  .bottom-buttons, .bottom-button-page2 {
+    bottom: 0;
+  }
+}
+
+.btn {
+  width: calc(100% - 40px);
+  margin: 0 20px;
+  padding: 20px; /* Увеличено с 15px до 20px */
+  border-radius: 12.625px;
+  border: 2px solid  #2997e182;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-sizing: border-box;
+}
+
+.btn-primary {
+  background: #2875c7ec;
+  color: white;
+  border: none;
+  margin: 5px;
+}
+
+.btn-primary:active {
+  background: #2875c7ec;
+}
+
+.btn-secondary {
+  background: white;
+  color:  #2875c7ec;
+  border: 2px solid #A3C9F2;
+}
+
+.btn-secondary:active {
+  background: white;
+}
+
+.input-row {
+  margin-bottom: 15px; 
+  width: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: 16px;
+}
+
+.input-row label {
+  margin-bottom: 3px; 
+  font-size: 14px;
+  color: #787878;
+}
+
+.input-row input {
+  width: 100%;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: 15.625px;
+  font-size: 20px; /* Увеличен размер текста */
+  box-sizing: border-box;
+  background: transparent;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  text-align: left;
+  margin-left: -5px;
+}
+
+.input-row input.filled {
+  color: #333;
+  background: transparent;
+}
+
+.copy-button {
+  width: 48px; /* Увеличено с 40px */
+  height: 48px; /* Увеличено с 40px */
+  margin-left: 8px;
+  border: none;
+  background: transparent;
+  border-radius: 15.625px;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.copy-button:hover {
+  background: transparent;
+}
+
+.copy-button:active,
+.copy-button.copied {
+  background: transparent;
+}
+
+.copy-button img {
+  opacity: 0.8;
+  width: 20px; /* Увеличено с 28px до 38px */
+  height: 20px; /* Увеличено с 28px до 38px */
+  display: block;
+}
+
+.copy-button:hover img {
+  opacity: 0.8;
+}
+
+.copy-button:active img,
+.copy-button.copied img {
+  opacity: 0.8;
+}
+
+.copy-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333333;
+  color: white;
+  padding: 12px 16px;
+  border-radius: 15.625px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.copy-notification.visible {
+  opacity: 1;
+}
+
+.copy-notification svg {
+  width: 20px;
+  height: 20px;
+  stroke: #4CAF50;
+}
+
+@media screen and (max-width: 768px) {
+  .input-row {
+    margin-bottom: 15px;
+  }
+  
+  .input-row input {
+    padding: 10px;
+    font-size: 14px;
+  }
+}
+
+.photo-preview {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  display: none;
+}
+
+.photo-preview.active {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transform-origin: center;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: none;
+}
+
+.upload-icon {
+  width: 48px;
+  height: 48px;
+  fill: #ccc;
+  margin-bottom: 10px;
+}
+
+.upload-text {
+  color: #666;
+  font-size: 14px;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .photo-upload-container {
+    height: calc(100vh - 280px); 
+  }
+}
+
+@media (min-width: 1024px) {
+  .photo-upload-container {
+    max-width: 800px;
+    margin: 0 auto;
+  }
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+::selection {
+  background: transparent;
+}
+
+::-moz-selection {
+  background: transparent;
+}
+
+.bottom-button-page2 {
+  display: none;
+}
+
+@media screen and (max-width: 480px) {
+  .header {
+    padding: 8px 12px;
+    font-size: 15px;
+  }
+
+  .header > span {
+    font-size: 15px;
+  }
+
+  .text-inputs-container {
+    height: calc(100vh - 280px);
+    padding: 10px;
+  }
+
+  .photo-upload-container {
+    height: calc(100vh - 280px);
+  }
+
+  .btn {
+    width: calc(100% - 20px);
+    margin: 0 10px;
+    padding: 15px; /* Увеличено с 12px до 16px для мобильной версии */
+    font-size: 16px;
+  }
+
+  .qr-modal {
+    padding: 8px 16px;
+  }
+
+  .qr-code-container {
+    width: 120px;
+    height: 120px;
+  }
+
+  .qr-code-number {
+    font-size: 20px;
+  }
+}
+
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.2);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+}
+
+.loading-overlay.show {
+  display: flex;
+}
+
+.loading-container {
+  background: white;
+  padding: 20px; /* Уменьшено с 30px */
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  position: fixed;
+  top: 40%; /* Добавлено для поднятия выше */
+  left: 50%;
+  transform: translate(-50%, -50%); /* Центрирование */
+}
+
+.loading-spinner {
+  width: 30px; /* Уменьшено с 36px */
+  height: 30px; /* Уменьшено с 36px */
+  border: 3px solid rgba(220, 43, 43, 0.2);
+  border-radius: 50%;
+  border-top-color: #dc2b2b;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

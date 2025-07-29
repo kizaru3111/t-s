@@ -1,0 +1,8 @@
+flask
+mysql-connector-python
+pyjwt
+python-dotenv
+gunicorn
+pymysql
+cryptography
+apscheduler

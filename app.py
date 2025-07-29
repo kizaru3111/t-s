@@ -6,10 +6,21 @@ import logging
 from functools import wraps
 import jwt
 import os
+import time
 from dotenv import load_dotenv
 
 # Загружаем переменные окружения из .env файла
 load_dotenv()
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY')  # Получаем из переменной окружения
@@ -37,17 +48,36 @@ JWT_EXPIRATION = timedelta(days=1)
 
 # Database Configuration
 MYSQL_CONFIG = {
-    'host': os.environ.get('DB_HOST', 'localhost'),
-    'user': os.environ.get('DB_USER'),
-    'password': os.environ.get('DB_PASSWORD'),
-    'database': os.environ.get('DB_NAME', 'access_codes')
+    'host': os.environ.get('DB_HOST', 'db4free.net'),
+    'user': os.environ.get('DB_USER', 'zhantik31'),
+    'password': os.environ.get('DB_PASSWORD', 'randome21'),
+    'database': os.environ.get('DB_NAME', 'access_data'),
+    'connect_timeout': 30,  # Увеличиваем таймаут подключения
+    'connection_timeout': 30,
+    'compress': True,  # Сжатие данных для медленных соединений
+    'buffered': True  # Буферизация для улучшения производительности
 }
 
 def get_db():
     """Установка соединения с базой данных"""
-    conn = mysql.connector.connect(**MYSQL_CONFIG)
-    conn.autocommit = True
-    return conn
+    retries = 5  # вместо текущих 3
+    delay = 1  # начальная задержка в секундах
+    
+    for attempt in range(retries):
+        try:
+            logger.info(f"Attempting to connect to database at {MYSQL_CONFIG['host']} (attempt {attempt + 1}/{retries})")
+            conn = mysql.connector.connect(**MYSQL_CONFIG)
+            conn.autocommit = True
+            logger.info("Database connection successful")
+            return conn
+        except mysql.connector.Error as e:
+            logger.error(f"Database connection error (attempt {attempt + 1}/{retries}): {str(e)}")
+            if attempt < retries - 1:
+                logger.info(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+                delay *= 2  # увеличиваем задержку экспоненциально
+            else:
+                raise
 
 def init_db():
     """Инициализация базы данных"""
@@ -172,53 +202,64 @@ def home():
 @app.route('/login', methods=['GET', 'POST'])
 def login_page():
     """Страница входа"""
-    if not request.args.get('no_redirect') and 'user_id' in session and session.get('session_id'):
-        with get_db() as conn:
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute('''
-                SELECT 1 FROM codes 
-                WHERE user_id = %s AND session_id = %s AND is_used = 1 AND expires_at > %s
-            ''', (session['user_id'], session['session_id'], datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-            session_active = cursor.fetchone()
-            
-            if session_active:
-                return redirect(url_for('dashboard'))
-
-    if request.method == 'POST':
-        code = request.form.get('code', '').strip().upper()
-        
-        with get_db() as conn:
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute('''
-                SELECT user_id, expires_at FROM codes 
-                WHERE code = %s AND is_used = 0 AND expires_at > %s
-            ''', (code, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-            code_data = cursor.fetchone()
-            
-            if code_data:
-                session_id = secrets.token_hex(16)
-                session.permanent = True
-                
+    try:
+        # Проверка существующей сессии
+        if not request.args.get('no_redirect') and 'user_id' in session and session.get('session_id'):
+            with get_db() as conn:
+                cursor = conn.cursor(dictionary=True)
                 cursor.execute('''
-                    UPDATE codes 
-                    SET is_used = TRUE, session_id = %s
-                    WHERE code = %s
-                ''', (session_id, code))
-                conn.commit()
+                    SELECT 1 FROM codes 
+                    WHERE user_id = %s AND session_id = %s AND is_used = 1 AND expires_at > %s
+                ''', (session['user_id'], session['session_id'], datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                session_active = cursor.fetchone()
                 
-                session['user_id'] = code_data['user_id']
-                session['session_id'] = session_id
-                session['expires_at'] = str(code_data['expires_at'])
-                
-                return redirect(url_for('dashboard'))
+                if session_active:
+                    return redirect(url_for('dashboard'))
+
+        # Обработка POST-запроса (попытка входа)
+        if request.method == 'POST':
+            code = request.form.get('code', '').strip().upper()
+            app.logger.info(f"Attempting login with code length: {len(code)}")
             
-            return jsonify({"error": "Неверный или просроченный код!"}), 401
-    
-    response = make_response(render_template('login.html'))
-    response.headers['Cache-Control'] = 'no-store, must-revalidate'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
-    return response
+            with get_db() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    SELECT user_id, expires_at FROM codes 
+                    WHERE code = %s AND is_used = 0 AND expires_at > %s
+                ''', (code, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                code_data = cursor.fetchone()
+                
+                if code_data:
+                    session_id = secrets.token_hex(16)
+                    session.permanent = True
+                    
+                    cursor.execute('''
+                        UPDATE codes 
+                        SET is_used = TRUE, session_id = %s
+                        WHERE code = %s
+                    ''', (session_id, code))
+                    conn.commit()
+                    
+                    session['user_id'] = code_data['user_id']
+                    session['session_id'] = session_id
+                    session['expires_at'] = str(code_data['expires_at'])
+                    app.logger.info(f"Successful login for user_id: {code_data['user_id']}")
+                    
+                    return redirect(url_for('dashboard'))
+                
+                app.logger.warning("Invalid or expired code attempt")
+                return jsonify({"error": "Неверный или просроченный код!"}), 401
+
+        # GET-запрос - показываем страницу входа
+        response = make_response(render_template('login.html'))
+        response.headers['Cache-Control'] = 'no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+
+    except Exception as e:
+        app.logger.error(f"Login error: {str(e)}")
+        return jsonify({"error": "Ошибка сервера", "details": str(e)}), 500
 
 @app.route('/api/login', methods=['POST'])
 def api_login():
@@ -359,30 +400,51 @@ def session_updated():
 
 @app.route('/dashboard')
 def dashboard():
-    # Добавляем заголовок для предотвращения кэширования страницы
-    response_headers = {
-        'Cache-Control': 'no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-    }
+    try:
+        # Добавляем заголовок для предотвращения кэширования страницы
+        response_headers = {
+            'Cache-Control': 'no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        }
 
-    # Добавляем защиту от циклических редиректов
-    if request.args.get('no_redirect') == '1':
-        return redirect(url_for('login_page'))
+        # Добавляем защиту от циклических редиректов
+        if request.args.get('no_redirect') == '1':
+            return redirect(url_for('login_page'))
 
-    # Проверяем сначала Bearer токен
-    auth_header = request.headers.get('Authorization')
-    if auth_header and auth_header.startswith('Bearer '):
-        token = auth_header.replace('Bearer ', '')
-        try:
-            payload = verify_jwt_token(token)
-            if payload:
+        # Проверяем сначала Bearer токен
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.replace('Bearer ', '')
+            try:
+                payload = verify_jwt_token(token)
+                if payload:
+                    with get_db() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            SELECT 1 FROM codes 
+                            WHERE user_id = %s AND session_id = %s AND is_used = 1 AND expires_at > %s
+                        ''', (payload['user_id'], payload.get('session_id'), datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                        session_active = cursor.fetchone()
+                        
+                        if session_active:
+                            response = make_response(render_template('dashboard.html'))
+                            for key, value in response_headers.items():
+                                response.headers[key] = value
+                            return response
+            except Exception as e:
+                app.logger.error(f"JWT or database error: {str(e)}")
+                return jsonify({"error": "Ошибка проверки токена"}), 401
+
+        # Проверяем обычную сессию
+        if 'user_id' in session and session.get('session_id'):
+            try:
                 with get_db() as conn:
                     cursor = conn.cursor()
                     cursor.execute('''
                         SELECT 1 FROM codes 
                         WHERE user_id = %s AND session_id = %s AND is_used = 1 AND expires_at > %s
-                    ''', (payload['user_id'], payload.get('session_id'), datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                    ''', (session['user_id'], session['session_id'], datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
                     session_active = cursor.fetchone()
                     
                     if session_active:
@@ -390,8 +452,16 @@ def dashboard():
                         for key, value in response_headers.items():
                             response.headers[key] = value
                         return response
-        except:
-            pass
+            except Exception as e:
+                app.logger.error(f"Session check error: {str(e)}")
+                return jsonify({"error": "Ошибка проверки сессии"}), 500
+
+        # Если нет активной сессии, перенаправляем на страницу входа
+        return redirect(url_for('login_page', no_redirect='1'))
+
+    except Exception as e:
+        app.logger.error(f"Unexpected error in dashboard: {str(e)}")
+        return jsonify({"error": "Критическая ошибка сервера"}), 500
 
     # Проверяем обычную сессию
     if 'user_id' in session and session.get('session_id'):

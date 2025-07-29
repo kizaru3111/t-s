@@ -1,1 +1,240 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, maximum-scale=1.0, user-scalable=no">
+    <title>Авторизация по коду</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .login-box {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 90%;
+            max-width: 300px;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button {
+            background: #007BFF;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+            transition: background 0.2s;
+        }
+        button:active {
+            background: #0069d9;
+        }
+        #error {
+            color: red;
+            margin-top: 10px;
+            min-height: 20px;
+        }
+        #status {
+            margin-top: 20px;
+            font-weight: bold;
+            color: #666;
+        }
+    </style>
+    <!-- PWA мета-теги -->
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#007BFF">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+    <div class="login-box">
+        <h2>Введите код доступа</h2>
+        <input type="text" id="codeInput" placeholder="Код из Telegram" autocomplete="off">
+        <button id="loginBtn">Войти</button>
+        <div id="error"></div>
+        <div id="status"></div>
+    </div>
 
+    <script>
+        // Переменные для контроля частоты проверок
+        let lastSessionCheck = 0;
+        const SESSION_CHECK_INTERVAL = 30000; // 30 секунд между проверками
+
+        // Регистрация Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/static/sw.js')
+                    .then(registration => {
+                        console.log('SW registered:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.log('SW registration failed:', error);
+                    });
+            });
+        }
+
+        // Функция проверки возможности запроса
+        function canCheckSession() {
+            const now = Date.now();
+            if (now - lastSessionCheck < SESSION_CHECK_INTERVAL) {
+                return false;
+            }
+            lastSessionCheck = now;
+            return true;
+        }
+
+        // Проверяем параметр no_redirect при загрузке страницы
+        if (window.location.search.includes('no_redirect=1')) {
+            // Очищаем все данные авторизации
+            localStorage.removeItem('jwt_token');
+            localStorage.removeItem('expires_at');
+            localStorage.removeItem('session_data');
+            
+            // Удаляем параметр из URL без перезагрузки страницы
+            const url = new URL(window.location.href);
+            url.searchParams.delete('no_redirect');
+            window.history.replaceState({}, '', url);
+        }
+
+        // Функция проверки сессии
+        async function checkSession() {
+            if (!canCheckSession()) return;
+
+            const sessionData = localStorage.getItem('session_data');
+            if (sessionData) {
+                try {
+                    const data = JSON.parse(sessionData);
+                    const response = await fetch('/api/check_session', {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Session-Id': data.session_id,
+                            'X-User-Id': data.user_id
+                        }
+                    });
+
+                    if (!response.ok) {
+                        localStorage.removeItem('session_data');
+                        return;
+                    }
+
+                    const result = await response.json();
+                    if (result.status === 'active') {
+                        // Проверяем не находимся ли мы в цикле редиректов
+                        const redirectCount = parseInt(sessionStorage.getItem('redirect_count') || '0');
+                        if (redirectCount > 5) {
+                            console.error('Обнаружен цикл редиректов');
+                            sessionStorage.removeItem('redirect_count');
+                            return;
+                        }
+                        
+                        sessionStorage.setItem('redirect_count', (redirectCount + 1).toString());
+                        window.location.href = '/dashboard';
+                        return;
+                    }
+                } catch (e) {
+                    console.error('Session check error:', e);
+                    localStorage.removeItem('session_data');
+                }
+            }
+        }
+
+        // Проверяем сессию только при загрузке страницы
+        window.addEventListener('load', checkSession);
+
+        // Проверка авторизации при загрузке
+        document.addEventListener('DOMContentLoaded', () => {
+            const token = localStorage.getItem('jwt_token');
+            const expiresAt = localStorage.getItem('expires_at');
+            
+            if (token && expiresAt && new Date(expiresAt) > new Date()) {
+                checkAuth(token);
+            }
+        });
+
+        // Обработчик кнопки входа
+        document.getElementById('loginBtn').addEventListener('click', checkCode);
+
+        async function checkCode() {
+            const code = document.getElementById('codeInput').value.trim();
+            const errorEl = document.getElementById('error');
+            errorEl.textContent = '';
+            
+            if (!code) {
+                errorEl.textContent = 'Введите код!';
+                return;
+            }
+
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `code=${encodeURIComponent(code)}`
+                });
+
+                if (response.redirected) {
+                    // Сохраняем время последней проверки сессии
+                    lastSessionCheck = Date.now();
+                    
+                    const sessionResponse = await fetch('/api/session_data');
+                    if (sessionResponse.ok) {
+                        const sessionData = await sessionResponse.json();
+                        localStorage.setItem('session_data', JSON.stringify(sessionData));
+                    }
+                    window.location.href = response.url;
+                } else {
+                    const text = await response.text();
+                    try {
+                        const data = JSON.parse(text);
+                        errorEl.textContent = data.error || 'Неверный код';
+                    } catch {
+                        errorEl.textContent = 'Неверный код';
+                    }
+                }
+            } catch (e) {
+                console.error('Login error:', e);
+                errorEl.textContent = 'Ошибка соединения';
+            }
+        }
+
+        async function checkAuth(token) {
+            try {
+                const response = await fetch('/api/check_auth', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.authenticated) {
+                    window.location.replace('/dashboard');
+                } else {
+                    localStorage.removeItem('jwt_token');
+                    localStorage.removeItem('expires_at');
+                }
+            } catch (error) {
+                console.error('Auth check failed:', error);
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,16 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-  // Показываем shimmer эффект при загрузке страницы
-  const shimmerContainer = document.querySelector('.shimmer-container');
-  shimmerContainer.style.display = 'block';
-  shimmerContainer.style.opacity = '1';
-
-  // Скрываем shimmer через 1 секунду
-  setTimeout(() => {
-    shimmerContainer.style.opacity = '0';
-    setTimeout(() => {
-      shimmerContainer.style.display = 'none';
-    }, 300); // Дополнительная задержка для плавного исчезновения
-  }, 1000);
 
   const slider = document.querySelector('.slider');
   const tabLabels = document.querySelectorAll('.tab-label');

@@ -1,5 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-
   const slider = document.querySelector('.slider');
   const tabLabels = document.querySelectorAll('.tab-label');
   let currentPage = 1;
@@ -747,30 +746,18 @@ document.addEventListener('DOMContentLoaded', () => {
   function loadSavedPhoto() {
     const savedPhoto = loadFromCache('uploadedPhoto');
     if (savedPhoto) {
-      // Скрываем фото и плейсхолдер, показываем shimmer
-      document.querySelector('.photo-preview').classList.remove('active');
-      shimmerContainer.style.display = 'block';
-      shimmerContainer.style.opacity = '1';
-      uploadPlaceholder.style.display = 'none';
-
-      // Ждем 1 секунду, затем показываем фото
-      setTimeout(() => {
-        shimmerContainer.style.opacity = '0';
-        setTimeout(() => {
-          shimmerContainer.style.display = 'none';
-          photoPreview.src = savedPhoto;
-          photoPreview.onload = () => {
-            document.querySelector('.photo-preview').classList.add('active');
-            // Отключаем дальнейшую загрузку фото
-            photoUploadContainer.removeEventListener('click', handlePhotoUpload);
-            photoInput.disabled = true;
-            photoUploadContainer.style.cursor = 'default';
-            if (uploadPlaceholder) {
-              uploadPlaceholder.remove();
-            }
-          };
-        }, 300);
-      }, 1000);
+      photoPreview.src = savedPhoto;
+      photoPreview.onload = () => {
+        uploadPlaceholder.style.display = 'none';
+        document.querySelector('.photo-preview').classList.add('active');
+        // Отключаем дальнейшую загрузку фото
+        photoUploadContainer.removeEventListener('click', handlePhotoUpload);
+        photoInput.disabled = true;
+        photoUploadContainer.style.cursor = 'default';
+        if (uploadPlaceholder) {
+          uploadPlaceholder.remove();
+        }
+      };
     }
   }
 

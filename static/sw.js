@@ -129,40 +129,35 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Проверяем истечение сессии для запросов к dashboard без перезагрузки страницы
+  // Проверяем истечение сессии для всех запросов к dashboard
   if (url.pathname === '/dashboard' || url.pathname === '/') {
     event.respondWith(
       (async () => {
         try {
+          await checkSessionExpiration();
           const token = await getTokenFromClient();
           if (!token) {
             return Response.redirect('/login', 302);
           }
 
-          // Если нет необходимости в проверке сессии, просто возвращаем запрос
-          if (Date.now() - lastSessionCheck < SESSION_CHECK_INTERVAL) {
-            return fetch(event.request);
-          }
-
-          // Проверяем сессию, но не перезагружаем страницу
-          const response = await fetch('/api/check_session', {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
-
-          if (response.status === 401) {
-            lastSessionCheck = Date.now();
-            self.clients.matchAll().then(clients => {
-              clients.forEach(client => {
-                client.postMessage({ type: 'SESSION_EXPIRED' });
-              });
+          // Проверяем сессию только если прошло достаточно времени
+          if (Date.now() - lastSessionCheck >= SESSION_CHECK_INTERVAL) {
+            const response = await fetch('/api/check_session', {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
             });
-            return Response.redirect('/login', 302);
+
+            if (response.status === 401) {
+              self.clients.matchAll().then(clients => {
+                clients.forEach(client => {
+                  client.postMessage({ type: 'SESSION_EXPIRED' });
+                });
+              });
+              return Response.redirect('/login', 302);
+            }
           }
 
-          // Обновляем время последней проверки
-          lastSessionCheck = Date.now();
           return fetch(event.request);
         } catch (error) {
           console.error('Error checking session:', error);
@@ -172,12 +167,6 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
-
-  // Все остальные запросы
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => response || fetch(event.request))
-  );
 });
 
 async function getTokenFromClient() {

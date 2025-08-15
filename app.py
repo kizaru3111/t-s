@@ -218,26 +218,48 @@ def login_page():
 
         # Обработка POST-запроса (попытка входа)
         if request.method == 'POST':
-            code = request.form.get('code', '').strip().upper()
-            app.logger.info(f"Attempting login with code length: {len(code)}")
+            code = request.form.get('code', '').strip()  # Убираем .upper()
+            app.logger.info(f"Attempting login with code: '{code}'")
             
             with get_db() as conn:
                 cursor = conn.cursor(dictionary=True)
+                # Сначала проверяем, существует ли такой код вообще
                 cursor.execute('''
-                    SELECT user_id, expires_at FROM codes 
-                    WHERE code = %s AND is_used = 0 AND expires_at > %s
-                ''', (code, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                    SELECT c.user_id, c.expires_at, c.is_used, c.code
+                    FROM codes c 
+                    WHERE c.code = %s
+                ''', (code,))
                 code_data = cursor.fetchone()
                 
+                if not code_data:
+                    app.logger.warning(f"Code not found in database: '{code}'")
+                    return jsonify({"error": "Неверный код"}), 401
+                
+                app.logger.info(f"Found code: {code_data}")
+                current_time = datetime.now()
+                
                 if code_data:
+                    # Проверяем, не использован ли уже код
+                    if code_data['is_used']:
+                        app.logger.warning("Попытка использовать уже активированный код")
+                        return jsonify({"error": "Этот код уже был активирован"}), 401
+                    
+                    # Проверяем, не истек ли срок действия кода
+                    expires_at = code_data['expires_at']
+                    if expires_at < current_time:
+                        app.logger.warning("Попытка использовать просроченный код")
+                        return jsonify({"error": "Срок действия кода истек"}), 401
+                    
                     session_id = secrets.token_hex(16)
                     session.permanent = True
                     
                     cursor.execute('''
                         UPDATE codes 
-                        SET is_used = TRUE, session_id = %s
+                        SET is_used = TRUE, 
+                            session_id = %s,
+                            last_used_at = %s
                         WHERE code = %s
-                    ''', (session_id, code))
+                    ''', (session_id, current_time.strftime("%Y-%m-%d %H:%M:%S"), code))
                     conn.commit()
                     
                     session['user_id'] = code_data['user_id']
@@ -247,7 +269,7 @@ def login_page():
                     
                     return redirect(url_for('dashboard'))
                 
-                app.logger.warning("Invalid or expired code attempt")
+                app.logger.warning(f"Invalid code attempt. Code format is incorrect or code doesn't exist. Code: '{code}'")
                 return jsonify({"error": "Неверный или просроченный код!"}), 401
 
         # GET-запрос - показываем страницу входа

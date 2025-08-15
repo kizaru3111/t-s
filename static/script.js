@@ -717,7 +717,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const sendRequisitesButton = document.querySelector('.bottom-button-page2 .btn-secondary');
   sendRequisitesButton.addEventListener('click', showLoading);
 
-  // Функции для работы с кэшем и авторизацией
+  // Функции для работы с кэшем
   function saveToCache(key, value) {
     localStorage.setItem(key, value);
   }
@@ -725,80 +725,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function loadFromCache(key) {
     return localStorage.getItem(key);
   }
-
-  // Сохранение JWT токена
-  function saveAuthToken(token) {
-    localStorage.setItem('auth_token', token);
-  }
-
-  // Получение JWT токена
-  function getAuthToken() {
-    return localStorage.getItem('auth_token');
-  }
-
-  // Проверка статуса сессии
-  async function checkSessionStatus() {
-    const token = getAuthToken();
-    if (!token) {
-      window.location.href = '/login';
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/check_session', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || data.status === 'expired') {
-        localStorage.removeItem('auth_token');
-        alert('Ваше время доступа закончилось. Пожалуйста, введите новый код.');
-        window.location.href = '/login';
-        return;
-      }
-
-      // Если осталось меньше 2 минут, показываем предупреждение
-      if (data.remaining_seconds < 120) {
-        const minutesLeft = Math.ceil(data.remaining_seconds / 60);
-        showWarning(`Внимание! Осталось ${minutesLeft} минут(ы) доступа.`);
-      }
-
-      // Обновляем отображение оставшегося времени
-      updateTimeDisplay(data.remaining_seconds);
-    } catch (error) {
-      console.error('Session check failed:', error);
-    }
-  }
-
-  // Показ предупреждения
-  function showWarning(message) {
-    const warningDiv = document.createElement('div');
-    warningDiv.className = 'session-warning';
-    warningDiv.textContent = message;
-    document.body.appendChild(warningDiv);
-
-    setTimeout(() => {
-      warningDiv.remove();
-    }, 5000);
-  }
-
-  // Обновление отображения времени
-  function updateTimeDisplay(seconds) {
-    const timeDisplay = document.getElementById('time-remaining');
-    if (timeDisplay) {
-      const hours = Math.floor(seconds / 3600);
-      const minutes = Math.floor((seconds % 3600) / 60);
-      const remainingSeconds = seconds % 60;
-
-      timeDisplay.textContent = `Осталось: ${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-    }
-  }
-
-  // Периодическая проверка сессии
-  setInterval(checkSessionStatus, 60 * 1000); // Каждую минуту
 
   // Загрузка сохраненных текстовых данных
   function loadSavedInputs() {

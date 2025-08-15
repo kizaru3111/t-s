@@ -11,9 +11,8 @@ const ASSETS = [
 
 // Добавляем состояние сессии
 let lastSessionCheck = Date.now();
-const SESSION_CHECK_INTERVAL = 60 * 1000; // 1 минута
+const SESSION_CHECK_INTERVAL = 30000;
 let sessionStatus = null;
-let authToken = null;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -37,24 +36,6 @@ self.addEventListener('activate', (event) => {
 // Функция для управления API запросами
 async function handleApiRequest(request) {
   const now = Date.now();
-  const token = await getTokenFromClient();
-  
-  // Добавляем токен к запросу, если он есть
-  if (token && !request.headers.has('Authorization')) {
-    const newHeaders = new Headers(request.headers);
-    newHeaders.set('Authorization', `Bearer ${token}`);
-    request = new Request(request.url, {
-      method: request.method,
-      headers: newHeaders,
-      body: request.body,
-      mode: request.mode,
-      credentials: request.credentials,
-      cache: request.cache,
-      redirect: request.redirect,
-      referrer: request.referrer,
-      integrity: request.integrity
-    });
-  }
   
   // Если запрос к check_session, проверяем интервал
   if (request.url.includes('/api/check_session')) {
@@ -125,20 +106,7 @@ async function checkSessionExpiration() {
 }
 
 // Добавляем периодическую проверку сессии
-// Функция для получения токена из клиентского хранилища
-async function getTokenFromClient() {
-  const clients = await self.clients.matchAll();
-  if (clients.length === 0) return null;
-  
-  // Запрашиваем токен у первого активного клиента
-  const response = await clients[0].evaluate(() => {
-    return localStorage.getItem('auth_token');
-  });
-  
-  return response;
-}
-
-setInterval(checkSessionExpiration, 60 * 1000); // Проверяем каждую минуту
+setInterval(checkSessionExpiration, 10000);
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);

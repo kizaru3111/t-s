@@ -279,16 +279,31 @@ def api_login():
                 session_id = secrets.token_hex(16)
                 cursor.execute('''
                     UPDATE codes 
-                    SET is_used = TRUE, session_id = %s
+                    SET is_used = TRUE, session_id = %s, needs_refresh = FALSE
                     WHERE code = %s
                 ''', (session_id, code))
+                conn.commit()
                 
+                # Создаем JWT токен с увеличенным сроком действия
                 token = create_jwt_token(code_data['user_id'])
                 
-                return jsonify({
+                response = jsonify({
                     'token': token,
                     'expires_at': str(code_data['expires_at'])
                 })
+                
+                # Устанавливаем куки для JWT токена
+                max_age = 24 * 60 * 60  # 24 часа
+                response.set_cookie(
+                    'auth_token',
+                    token,
+                    max_age=max_age,
+                    httponly=True,
+                    secure=True,
+                    samesite='Strict'
+                )
+                
+                return response
         
         return jsonify({'error': 'Неверный код'}), 401
         
@@ -309,9 +324,11 @@ def get_session_data():
 
 @app.route('/api/check_session')
 def check_session_status():
-    # Добавляем заголовок для кэширования
+    # Запрещаем кэширование для точной проверки времени
     response_headers = {
-        'Cache-Control': 'private, max-age=30'  # Разрешаем кэширование на 30 секунд
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0'
     }
     
     # Проверяем сначала Bearer токен
@@ -324,42 +341,61 @@ def check_session_status():
                 user_id = payload['user_id']
                 session_id = payload.get('session_id')
             else:
-                return jsonify({"status": "invalid"}), 401, response_headers
+                return jsonify({"status": "invalid", "reason": "invalid_token"}), 401, response_headers
         except:
-            return jsonify({"status": "invalid"}), 401, response_headers
+            return jsonify({"status": "invalid", "reason": "token_error"}), 401, response_headers
     else:
         # Если нет Bearer токена, используем заголовки X-User-Id и X-Session-Id
         user_id = request.headers.get('X-User-Id')
         session_id = request.headers.get('X-Session-Id')
     
     if not user_id or not session_id:
-        return jsonify({"status": "invalid"}), 401, response_headers
+        return jsonify({"status": "invalid", "reason": "missing_credentials"}), 401, response_headers
 
-    # Проверяем частоту запросов
-    if not can_check_session(user_id):
-        return jsonify({
-            "status": "active",
-            "cached": True,
-            "expires_in": 30  # Добавляем информацию о времени истечения кэша
-        }), 200, response_headers
+    current_time = datetime.now()
 
     with get_db() as conn:
         cursor = conn.cursor(dictionary=True)
         cursor.execute('''
-            SELECT expires_at FROM codes 
-            WHERE user_id = %s AND session_id = %s AND is_used = TRUE AND expires_at > %s
-        ''', (user_id, session_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            SELECT c.*, 
+                   TIMESTAMPDIFF(SECOND, NOW(), c.expires_at) as remaining_seconds
+            FROM codes c
+            WHERE c.user_id = %s 
+            AND c.session_id = %s 
+            AND c.is_used = TRUE 
+            AND c.expires_at > NOW()
+        ''', (user_id, session_id))
         code_data = cursor.fetchone()
         
         if code_data:
+            remaining_seconds = int(code_data['remaining_seconds'])
+            
             response_data = {
                 "status": "active",
                 "expires_at": str(code_data['expires_at']),
-                "cache_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "remaining_seconds": remaining_seconds,
+                "check_time": current_time.strftime("%Y-%m-%d %H:%M:%S")
             }
+            
+            # Если осталось меньше 2 минут, отправляем предупреждение
+            if remaining_seconds < 120:
+                response_data["warning"] = "session_ending_soon"
+            
             return jsonify(response_data), 200, response_headers
+            
+        # Если сессия истекла, очищаем её в базе
+        cursor.execute('''
+            UPDATE codes 
+            SET is_used = FALSE, session_id = NULL 
+            WHERE user_id = %s AND session_id = %s
+        ''', (user_id, session_id))
+        conn.commit()
     
-    return jsonify({"status": "expired"}), 401, response_headers
+    return jsonify({
+        "status": "expired",
+        "reason": "time_expired",
+        "check_time": current_time.strftime("%Y-%m-%d %H:%M:%S")
+    }), 401, response_headers
 
 @app.route('/api/session_updated', methods=['POST'])
 def session_updated():

@@ -218,21 +218,54 @@ def login_page():
 
         # Обработка POST-запроса (попытка входа)
         if request.method == 'POST':
-            code = request.form.get('code', '').strip()  # Убираем .upper()
-            app.logger.info(f"Attempting login with code: '{code}'")
+            code = request.form.get('code', '').strip()  # Оставляем код как есть
+            app.logger.info(f"Attempting login with code: '{code}', length: {len(code)}")
             
-            with get_db() as conn:
-                cursor = conn.cursor(dictionary=True)
-                # Сначала проверяем, существует ли такой код вообще
-                cursor.execute('''
-                    SELECT c.user_id, c.expires_at, c.is_used, c.code
-                    FROM codes c 
-                    WHERE c.code = %s
-                ''', (code,))
+            if not code or len(code) != 8:  # Проверяем правильную длину кода
+                app.logger.warning(f"Invalid code format. Code must be 8 characters long. Got length: {len(code) if code else 0}")
+                return jsonify({"error": "Неверный формат кода"}), 401
+            
+            try:
+                with get_db() as conn:
+                    cursor = conn.cursor(dictionary=True)
+                    
+                    # Сначала проверяем, существует ли такой код вообще
+                    cursor.execute('''
+                        SELECT c.user_id, c.expires_at, c.is_used, c.code
+                        FROM codes c 
+                        WHERE BINARY c.code = %s
+                    ''', (code,))  # Используем BINARY для точного сравнения
+                    code_data = cursor.fetchone()
+                    
+                    if not code_data:
+                        # Пробуем поискать код в нижнем регистре
+                        cursor.execute('''
+                            SELECT c.user_id, c.expires_at, c.is_used, c.code
+                            FROM codes c 
+                            WHERE BINARY c.code = %s
+                        ''', (code.lower(),))
+                        code_data = cursor.fetchone()
+                        
+                    if not code_data:
+                        app.logger.warning(f"Code not found in database: '{code}'")
+                        return jsonify({"error": "Неверный код"}), 401
+            except Exception as e:
+                app.logger.error(f"Database error during code check: {str(e)}")
+                return jsonify({"error": "Ошибка проверки кода. Попробуйте позже."}), 500
                 code_data = cursor.fetchone()
                 
                 if not code_data:
-                    app.logger.warning(f"Code not found in database: '{code}'")
+                    app.logger.warning(f"Code not found in database: '{code}'. Looking for similar codes...")
+                    # Ищем похожие коды для отладки
+                    cursor.execute('''
+                        SELECT c.code, c.is_used
+                        FROM codes c
+                        WHERE c.code LIKE %s
+                        LIMIT 5
+                    ''', (f"%{code}%",))
+                    similar_codes = cursor.fetchall()
+                    if similar_codes:
+                        app.logger.info(f"Found similar codes: {[c['code'] for c in similar_codes]}")
                     return jsonify({"error": "Неверный код"}), 401
                 
                 app.logger.info(f"Found code: {code_data}")

@@ -218,81 +218,26 @@ def login_page():
 
         # Обработка POST-запроса (попытка входа)
         if request.method == 'POST':
-            code = request.form.get('code', '').strip()  # Оставляем код как есть
-            app.logger.info(f"Attempting login with code: '{code}', length: {len(code)}")
+            code = request.form.get('code', '').strip().upper()
+            app.logger.info(f"Attempting login with code length: {len(code)}")
             
-            if not code or len(code) != 8:  # Проверяем правильную длину кода
-                app.logger.warning(f"Invalid code format. Code must be 8 characters long. Got length: {len(code) if code else 0}")
-                return jsonify({"error": "Неверный формат кода"}), 401
-            
-            try:
-                with get_db() as conn:
-                    cursor = conn.cursor(dictionary=True)
-                    
-                    # Сначала проверяем, существует ли такой код вообще
-                    cursor.execute('''
-                        SELECT c.user_id, c.expires_at, c.is_used, c.code
-                        FROM codes c 
-                        WHERE BINARY c.code = %s
-                    ''', (code,))  # Используем BINARY для точного сравнения
-                    code_data = cursor.fetchone()
-                    
-                    if not code_data:
-                        # Пробуем поискать код в нижнем регистре
-                        cursor.execute('''
-                            SELECT c.user_id, c.expires_at, c.is_used, c.code
-                            FROM codes c 
-                            WHERE BINARY c.code = %s
-                        ''', (code.lower(),))
-                        code_data = cursor.fetchone()
-                        
-                    if not code_data:
-                        app.logger.warning(f"Code not found in database: '{code}'")
-                        return jsonify({"error": "Неверный код"}), 401
-            except Exception as e:
-                app.logger.error(f"Database error during code check: {str(e)}")
-                return jsonify({"error": "Ошибка проверки кода. Попробуйте позже."}), 500
+            with get_db() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    SELECT user_id, expires_at FROM codes 
+                    WHERE code = %s AND is_used = 0 AND expires_at > %s
+                ''', (code, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
                 code_data = cursor.fetchone()
                 
-                if not code_data:
-                    app.logger.warning(f"Code not found in database: '{code}'. Looking for similar codes...")
-                    # Ищем похожие коды для отладки
-                    cursor.execute('''
-                        SELECT c.code, c.is_used
-                        FROM codes c
-                        WHERE c.code LIKE %s
-                        LIMIT 5
-                    ''', (f"%{code}%",))
-                    similar_codes = cursor.fetchall()
-                    if similar_codes:
-                        app.logger.info(f"Found similar codes: {[c['code'] for c in similar_codes]}")
-                    return jsonify({"error": "Неверный код"}), 401
-                
-                app.logger.info(f"Found code: {code_data}")
-                current_time = datetime.now()
-                
                 if code_data:
-                    # Проверяем, не использован ли уже код
-                    if code_data['is_used']:
-                        app.logger.warning("Попытка использовать уже активированный код")
-                        return jsonify({"error": "Этот код уже был активирован"}), 401
-                    
-                    # Проверяем, не истек ли срок действия кода
-                    expires_at = code_data['expires_at']
-                    if expires_at < current_time:
-                        app.logger.warning("Попытка использовать просроченный код")
-                        return jsonify({"error": "Срок действия кода истек"}), 401
-                    
                     session_id = secrets.token_hex(16)
                     session.permanent = True
                     
                     cursor.execute('''
                         UPDATE codes 
-                        SET is_used = TRUE, 
-                            session_id = %s,
-                            last_used_at = %s
+                        SET is_used = TRUE, session_id = %s
                         WHERE code = %s
-                    ''', (session_id, current_time.strftime("%Y-%m-%d %H:%M:%S"), code))
+                    ''', (session_id, code))
                     conn.commit()
                     
                     session['user_id'] = code_data['user_id']
@@ -302,7 +247,7 @@ def login_page():
                     
                     return redirect(url_for('dashboard'))
                 
-                app.logger.warning(f"Invalid code attempt. Code format is incorrect or code doesn't exist. Code: '{code}'")
+                app.logger.warning("Invalid or expired code attempt")
                 return jsonify({"error": "Неверный или просроченный код!"}), 401
 
         # GET-запрос - показываем страницу входа
@@ -334,31 +279,16 @@ def api_login():
                 session_id = secrets.token_hex(16)
                 cursor.execute('''
                     UPDATE codes 
-                    SET is_used = TRUE, session_id = %s, needs_refresh = FALSE
+                    SET is_used = TRUE, session_id = %s
                     WHERE code = %s
                 ''', (session_id, code))
-                conn.commit()
                 
-                # Создаем JWT токен с увеличенным сроком действия
                 token = create_jwt_token(code_data['user_id'])
                 
-                response = jsonify({
+                return jsonify({
                     'token': token,
                     'expires_at': str(code_data['expires_at'])
                 })
-                
-                # Устанавливаем куки для JWT токена
-                max_age = 24 * 60 * 60  # 24 часа
-                response.set_cookie(
-                    'auth_token',
-                    token,
-                    max_age=max_age,
-                    httponly=True,
-                    secure=True,
-                    samesite='Strict'
-                )
-                
-                return response
         
         return jsonify({'error': 'Неверный код'}), 401
         
@@ -379,11 +309,9 @@ def get_session_data():
 
 @app.route('/api/check_session')
 def check_session_status():
-    # Запрещаем кэширование для точной проверки времени
+    # Добавляем заголовок для кэширования
     response_headers = {
-        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
-        'Pragma': 'no-cache',
-        'Expires': '0'
+        'Cache-Control': 'private, max-age=30'  # Разрешаем кэширование на 30 секунд
     }
     
     # Проверяем сначала Bearer токен
@@ -396,61 +324,42 @@ def check_session_status():
                 user_id = payload['user_id']
                 session_id = payload.get('session_id')
             else:
-                return jsonify({"status": "invalid", "reason": "invalid_token"}), 401, response_headers
+                return jsonify({"status": "invalid"}), 401, response_headers
         except:
-            return jsonify({"status": "invalid", "reason": "token_error"}), 401, response_headers
+            return jsonify({"status": "invalid"}), 401, response_headers
     else:
         # Если нет Bearer токена, используем заголовки X-User-Id и X-Session-Id
         user_id = request.headers.get('X-User-Id')
         session_id = request.headers.get('X-Session-Id')
     
     if not user_id or not session_id:
-        return jsonify({"status": "invalid", "reason": "missing_credentials"}), 401, response_headers
+        return jsonify({"status": "invalid"}), 401, response_headers
 
-    current_time = datetime.now()
+    # Проверяем частоту запросов
+    if not can_check_session(user_id):
+        return jsonify({
+            "status": "active",
+            "cached": True,
+            "expires_in": 30  # Добавляем информацию о времени истечения кэша
+        }), 200, response_headers
 
     with get_db() as conn:
         cursor = conn.cursor(dictionary=True)
         cursor.execute('''
-            SELECT c.*, 
-                   TIMESTAMPDIFF(SECOND, NOW(), c.expires_at) as remaining_seconds
-            FROM codes c
-            WHERE c.user_id = %s 
-            AND c.session_id = %s 
-            AND c.is_used = TRUE 
-            AND c.expires_at > NOW()
-        ''', (user_id, session_id))
+            SELECT expires_at FROM codes 
+            WHERE user_id = %s AND session_id = %s AND is_used = TRUE AND expires_at > %s
+        ''', (user_id, session_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         code_data = cursor.fetchone()
         
         if code_data:
-            remaining_seconds = int(code_data['remaining_seconds'])
-            
             response_data = {
                 "status": "active",
                 "expires_at": str(code_data['expires_at']),
-                "remaining_seconds": remaining_seconds,
-                "check_time": current_time.strftime("%Y-%m-%d %H:%M:%S")
+                "cache_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
-            
-            # Если осталось меньше 2 минут, отправляем предупреждение
-            if remaining_seconds < 120:
-                response_data["warning"] = "session_ending_soon"
-            
             return jsonify(response_data), 200, response_headers
-            
-        # Если сессия истекла, очищаем её в базе
-        cursor.execute('''
-            UPDATE codes 
-            SET is_used = FALSE, session_id = NULL 
-            WHERE user_id = %s AND session_id = %s
-        ''', (user_id, session_id))
-        conn.commit()
     
-    return jsonify({
-        "status": "expired",
-        "reason": "time_expired",
-        "check_time": current_time.strftime("%Y-%m-%d %H:%M:%S")
-    }), 401, response_headers
+    return jsonify({"status": "expired"}), 401, response_headers
 
 @app.route('/api/session_updated', methods=['POST'])
 def session_updated():
